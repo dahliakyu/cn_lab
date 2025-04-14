@@ -137,13 +137,13 @@ def handleSend(sock, user):
     finally:
         sock.close()
 
-def chatClient():
+def main() -> None:
     
     args: Namespace = parse_arguments()
     port: int = args.port
     host: str = args.address
     
-    print("Welcome to Chat Client. Enter your login:")
+    print("Welcome to Chat Client. Enter your login: ")
     
     while True:
         host_port = (host, port)
@@ -176,7 +176,7 @@ def chatClient():
         # Check for forbidden characters
         forbidden_symbols = " !@#$%^&*,"
         if any(char in forbidden_symbols for char in user_name):
-            print(f"Error: Username '{user_name}' contains disallowed characters.")
+            print(f"Cannot log in as {user_name}. That username contains disallowed characters.")
             chatSocket.close()
             print("Enter your login:")
             continue
@@ -219,11 +219,11 @@ def chatClient():
             print(f"Successfully logged in as {user_name}!")
             break
         elif response == "IN-USE":
-            print(f"Error: Username '{user_name}' is already in use.")
+            print(f"Cannot log in as {user_name}. That username is already in use.")
             chatSocket.close()
             print("Enter your login:")
         elif response == "BUSY":
-            print("Error: Server is full. Please try again later.")
+            print("Cannot log in. The server is full!")
             chatSocket.close()
             return
         else:
@@ -244,4 +244,4 @@ def chatClient():
         chatSocket.close()
 
 if __name__ == '__main__':
-    chatClient()
+    main()
