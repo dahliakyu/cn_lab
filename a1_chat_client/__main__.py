@@ -22,125 +22,226 @@ def parse_arguments() -> Namespace:
     parser.add_argument("-p", "--port",
                       type=int, help="Set server port", default=5378)
     return parser.parse_args()
-    
-def send_all(sock, data) -> None: 
-    """
-    Custom function for sending data chunks through a socket replacing sendall().
-    Allowing partial sends until all data is transmitted.
 
-    Args:
-        sock: Socket object for data transmission
-        data: Data to be sent
-    
-    Raises:
-        RuntimeError: Broken connection error during transimission
-        ConnectionError: Other network related errors including BrokenPipeError, ConnectionResetError and OSError
-    """
-    total_sent = 0
-    while total_sent < len(data):
-        try:
-            sent = sock.send(data[total_sent:])
-            # Raise connection error after handing 0 bytes data
-            if sent == 0:
-                raise RuntimeError("Socket connection broken")
-            total_sent += sent
-        except (BrokenPipeError, ConnectionResetError, OSError) as e:
-            print(f"Connection error: {e}")
-            raise
-
-# Login phase of the chat client
-def login(sock) -> bool:
-    """
-    Server authetication function implementing RA1 to RA8, see inline comments for specific requirements.
-
-    Args:
-        sock: Socket object for data transmission
-    
-    Returns:
-        bool: True if login successful, False otherwise.
-
-    """
-    # RA1, RI2: Mandatory welcome message upon startup.
-    print("Welcome to Chat Client. Enter your login:")
-    
-    while True: # Retry loop in case of failed login attempt without restarting the client (RA6)
-        try:
-            username = input().strip()
-            # Quit server if prompted (RC1)
-            if username == '!quit':
-                print("\nExiting server...")
-                sock.close
-                return False
-            # Handle empty username input
-            if not username:
-                print("Please provide a non-empty username:")
-                continue
-            # First handshake message
-            message = f"HELLO-FROM {username}\n"
-
-            send_all(sock, f"HELLO-FROM {username}\n".encode("UTF-8")) # Convert string to bytes
-            # Receive server response
-            response = ''
-            while '\n' not in response: # Waiting for complete message
+def handleReceive(sock):
+    try:
+        while True:
+            buff = ""
+            while "\n" not in buff:
                 try:
-                    chunk = sock.recv(4096).decode("utf-8", errors="replace") # Convert bytes to strings, handles alien bytes instead of crashing
-                    if not chunk: # Graceful closure
-                        print("Connection closed by server.")
-                        return False
-                    response += chunk
-                except (ConnectionResetError, OSError): # Abrupt closure
-                    print("Connection lost")
-                    return False
-    	    
-            # Retrieve header
-            header = response.split('\n', 1)[0].split(' ', 1)[0]
-            # Process header
-            if header == 'HELLO':
-                print(f"Successfully logged in as {username}")
-                return True
-            elif header == 'IN-USE':
-                print(f"Cannot log in as {username}. That username is already in use.")
-                print("Please enter a different username:")
-            elif header == 'BUSY':
-                print("Cannot log in. The server is full!")
-                # Close connection
-                sock.close()
-                # Graceful Exit
-                return False
-            elif header in ['BAD-RQST-HDR', 'BAD-RQST-BODY']: #Unsure if this is the correct header
-                print(f"Cannot log in as {username}. That username contains disallowed characters")
-                print("Please enter a different username:")
-        
-        # Final exception checks
-        except (EOFError, KeyboardInterrupt):
-            print("\nExiting server...")
-            return False
-        except Exception as e: # Catch alls
-            print(f"An error has occurred during login: {e}")
-            return False
+                    data = sock.recv(4096)
+                    if not data:
+                        print("\nConnection closed by server.")
+                        return
+                    buff += data.decode("utf-8")
+                except UnicodeDecodeError:
+                    print("\nError decoding message from server.")
+                    return
+                except (socket.error, ConnectionResetError, BrokenPipeError) as e:
+                    print(f"\nConnection error: {e}")
+                    return
+            
+            for line in buff.splitlines():
+                line = line.strip()
+                if not line:
+                    continue
+                
+                parts = line.split()
+                if not parts:
+                    continue
+                
+                header = parts[0]
+                
+                if header == "LIST-OK":
+                    if len(parts) > 1:
+                        users = []
+                        for part in parts[1:]:
+                            users.extend(part.split(','))
+                        users = [u for u in users if u]
+                        print(f"\nThere are {len(users)} online users:")
+                        for user in users:
+                            print(user)
+                    else:
+                        print("\nThere are 0 online users.")
+                        
+                elif header == "DELIVERY":
+                    if len(parts) < 3:
+                        print("\nError: Invalid DELIVERY message format.")
+                        continue
+                    sender = parts[1]
+                    message = " ".join(parts[2:])
+                    print(f"\nFrom {sender}: {message}")
+                    
+                elif header == "SEND-OK":
+                    print("\nThe message was sent successfully")
+                    
+                elif header == "BAD-DEST-USER":
+                    print("\nThe destination user does not exist")
+                    
+                else:
+                    print(f"\nError: Unknown message header '{header}'")
+    finally:
+        sock.close()
 
-# Execute using `python -m a1_chat_client`
-def main() -> None:
+def handleSend(sock, user):
+    try:
+        while True:
+            try:
+                message = input().strip()
+            except EOFError:
+                print("\nExiting...")
+                break
+                
+            if not message:
+                continue
+                
+            if message.startswith("!"):
+                if message == "!quit":
+                    try:
+                        sock.send("QUIT\n".encode("utf-8"))
+                    except (socket.error, BrokenPipeError, ConnectionResetError):
+                        print("\nConnection lost. Exiting...")
+                    break
+                elif message == "!who":
+                    try:
+                        sock.send("LIST\n".encode("utf-8"))
+                    except (socket.error, BrokenPipeError, ConnectionResetError):
+                        print("\nFailed to send LIST request. Connection lost.")
+                        break
+                    
+            elif message.startswith("@"):
+                parts = message.split(maxsplit=1)
+                if len(parts) < 2:
+                    print("\nInvalid format. Use '@username message'")
+                    continue
+                    
+                destUser = parts[0][1:]
+                if not destUser:
+                    print("\nInvalid format. Use '@username message'")
+                    continue
+                    
+                if destUser == user:
+                    print("\nCannot send a message to yourself.")
+                    continue
+                    
+                textOfMessage = parts[1]
+                full_message = f"SEND {destUser} {textOfMessage}\n"
+                try:
+                    sock.send(full_message.encode("utf-8"))
+                except (socket.error, BrokenPipeError, ConnectionResetError):
+                    print("\nFailed to send message. Connection lost.")
+                    break
+                    
+            else:
+                print("\nInvalid format. Use '@username message' or commands (!quit, !who)")
+    finally:
+        sock.close()
+
+def chatClient():
+    
     args: Namespace = parse_arguments()
     port: int = args.port
     host: str = args.address
     
-    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    print("Welcome to Chat Client. Enter your login:")
     
-    try:
-        sock.connect(host, port)
-    except ConnectionRefusedError: # Server error
-        print("Could not connect to server, please make sure the server is running.")
-        return
-    except Exception as e: # Catch all
-        print(f"A connection error has occurred: {e}")
-        return
-    # Close connection if login was not detected
-    if not login(sock):
-        sock.close()
-        return
-    
+    while True:
+        host_port = (host, port)
+        chatSocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        try:
+            chatSocket.connect(host_port)
+        except socket.error as e:
+            print(f"Cannot connect to server: {e}")
+            return
+            
+        user_name = input().strip()
+        
+        if user_name == "!quit":
+            chatSocket.close()
+            return
+            
+        if not user_name:
+            print("Error: Username cannot be empty.")
+            chatSocket.close()
+            print("Enter your login:")
+            continue
+            
+        # Check if username starts with command characters
+        if user_name.startswith("@") or user_name.startswith("!"):
+            print(f"Error: Username '{user_name}' cannot start with '@' or '!' (reserved for commands).")
+            chatSocket.close()
+            print("Enter your login:")
+            continue
+            
+        # Check for forbidden characters
+        forbidden_symbols = " !@#$%^&*,"
+        if any(char in forbidden_symbols for char in user_name):
+            print(f"Error: Username '{user_name}' contains disallowed characters.")
+            chatSocket.close()
+            print("Enter your login:")
+            continue
+        
+        # Send login request
+        hello_msg = f"HELLO-FROM {user_name}\n"
+        try:
+            chatSocket.send(hello_msg.encode("utf-8"))
+        except socket.error as e:
+            print(f"Failed to send login request: {e}")
+            chatSocket.close()
+            continue
+            
+        # Wait for server response
+        buff = ""
+        while "\n" not in buff:
+            try:
+                data = chatSocket.recv(4096)
+                if not data:
+                    print("Connection closed by server during login.")
+                    chatSocket.close()
+                    break
+                buff += data.decode("utf-8")
+            except UnicodeDecodeError:
+                print("Error decoding server response.")
+                chatSocket.close()
+                break
+            except (socket.error, ConnectionResetError) as e:
+                print(f"Connection error: {e}")
+                chatSocket.close()
+                break
+                
+        if not buff:
+            print("Enter your login:")
+            continue
+            
+        response = buff.strip()
+        
+        if response.startswith("HELLO"):
+            print(f"Successfully logged in as {user_name}!")
+            break
+        elif response == "IN-USE":
+            print(f"Error: Username '{user_name}' is already in use.")
+            chatSocket.close()
+            print("Enter your login:")
+        elif response == "BUSY":
+            print("Error: Server is full. Please try again later.")
+            chatSocket.close()
+            return
+        else:
+            # Handle other server-specific rejection reasons
+            print(f"Error: {response}")
+            chatSocket.close()
+            print("Enter your login:")
 
-    
-if __name__ == "__main__": 
-    main()
+    receive_thread = threading.Thread(target=handleReceive, args=(chatSocket,))
+    receive_thread.daemon = True
+    receive_thread.start()
+
+    try:
+        handleSend(chatSocket, user_name)
+    except KeyboardInterrupt:
+        print("\nExiting...")
+    finally:
+        chatSocket.close()
+
+if __name__ == '__main__':
+    chatClient()
