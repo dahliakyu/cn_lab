@@ -89,7 +89,7 @@ def handleReceive(sock):
     finally:
         sock.close()
 
-def handleSend(sock, user):
+def handleSend(sock):
     try:
         while True:
             try:
@@ -118,19 +118,12 @@ def handleSend(sock, user):
             elif message.startswith("@"):
                 parts = message.split(maxsplit=1)
                 if len(parts) < 2:
-                     print("Error: Unknown issue in previous message body.")
-                     continue
+                     textOfMessage = ''
+                else:
+                    textOfMessage = parts[1]
                     
                 destUser = parts[0][1:]
-                if not destUser:
-                     print("Error: Unknown issue in previous message body.")
-                     continue
-                    
-                # if destUser == user:
-                #     print("\nCannot send a message to yourself.")
-                #     continue
-                    
-                textOfMessage = parts[1]
+
                 full_message = f"SEND {destUser} {textOfMessage}\n"
                 try:
                     sock.send(full_message.encode("utf-8"))
@@ -243,7 +236,7 @@ def main() -> None:
     receive_thread.start()
 
     try:
-        handleSend(chatSocket, user_name)
+        handleSend(chatSocket)
     except KeyboardInterrupt:
         print("Exiting...")
     finally:
