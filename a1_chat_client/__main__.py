@@ -31,14 +31,14 @@ def handleReceive(sock):
                 try:
                     data = sock.recv(4096)
                     if not data:
-                        print("\nConnection closed by server.")
+                        print("Connection closed by server.")
                         return
                     buff += data.decode("utf-8")
                 except UnicodeDecodeError:
-                    print("\nError decoding message from server.")
+                    print("Error decoding message from server.")
                     return
                 except (socket.error, ConnectionResetError, BrokenPipeError) as e:
-                    print(f"\nConnection error: {e}")
+                    print(f"Connection error: {e}")
                     return
             
             for line in buff.splitlines():
@@ -66,20 +66,26 @@ def handleReceive(sock):
                         
                 elif header == "DELIVERY":
                     if len(parts) < 3:
-                        print("\nError: Invalid DELIVERY message format.")
+                        print("Error: Invalid DELIVERY message format.")
                         continue
                     sender = parts[1]
                     message = " ".join(parts[2:])
-                    print(f"\nFrom {sender}: {message}")
+                    print(f"From {sender}: {message}")
                     
                 elif header == "SEND-OK":
-                    print("\nThe message was sent successfully")
+                    print("The message was sent successfully")
                     
                 elif header == "BAD-DEST-USER":
-                    print("\nThe destination user does not exist")
+                    print("The destination user does not exist")
+                    
+                elif header == "BAD-RQST-HDR":
+                    print("Error: Unknown issue in previous message header.")
+                    
+                elif header == "BAD-RQST-BODY":
+                    print("Error: Unknown issue in previous message body.")
                     
                 else:
-                    print(f"\nError: Unknown message header '{header}'")
+                    print(f"Error: Unknown message header '{header}'")
     finally:
         sock.close()
 
@@ -95,45 +101,45 @@ def handleSend(sock, user):
             if not message:
                 continue
                 
-            if message.startswith("!"):
-                if message == "!quit":
-                    try:
-                        sock.send("QUIT\n".encode("utf-8"))
-                    except (socket.error, BrokenPipeError, ConnectionResetError):
-                        print("\nConnection lost. Exiting...")
+            if message == "!quit":
+                try:
+                    sock.send("QUIT\n".encode("utf-8"))
+                except (socket.error, BrokenPipeError, ConnectionResetError):
+                    print("Connection lost. Exiting...")
+                break
+            
+            elif message == "!who":
+                try:
+                    sock.send("LIST\n".encode("utf-8"))
+                except (socket.error, BrokenPipeError, ConnectionResetError):
+                    print("Failed to send LIST request. Connection lost.")
                     break
-                elif message == "!who":
-                    try:
-                        sock.send("LIST\n".encode("utf-8"))
-                    except (socket.error, BrokenPipeError, ConnectionResetError):
-                        print("\nFailed to send LIST request. Connection lost.")
-                        break
                     
             elif message.startswith("@"):
                 parts = message.split(maxsplit=1)
                 if len(parts) < 2:
-                    print("\nInvalid format. Use '@username message'")
-                    continue
+                     print("Error: Unknown issue in previous message body.")
+                     continue
                     
                 destUser = parts[0][1:]
                 if not destUser:
-                    print("\nInvalid format. Use '@username message'")
-                    continue
+                     print("Error: Unknown issue in previous message body.")
+                     continue
                     
-                if destUser == user:
-                    print("\nCannot send a message to yourself.")
-                    continue
+                # if destUser == user:
+                #     print("\nCannot send a message to yourself.")
+                #     continue
                     
                 textOfMessage = parts[1]
                 full_message = f"SEND {destUser} {textOfMessage}\n"
                 try:
                     sock.send(full_message.encode("utf-8"))
                 except (socket.error, BrokenPipeError, ConnectionResetError):
-                    print("\nFailed to send message. Connection lost.")
+                    print("Failed to send message. Connection lost.")
                     break
                     
             else:
-                print("\nInvalid format. Use '@username message' or commands (!quit, !who)")
+                print("Invalid format. Use '@username message' or commands (!quit, !who)")
     finally:
         sock.close()
 
@@ -189,7 +195,7 @@ def main() -> None:
             print(f"Failed to send login request: {e}")
             chatSocket.close()
             continue
-            
+            E
         # Wait for server response
         buff = ""
         while "\n" not in buff:
@@ -210,7 +216,7 @@ def main() -> None:
                 break
                 
         if not buff:
-            print("Enter your login:")
+            print("Enter your login: ")
             continue
             
         response = buff.strip()
@@ -239,7 +245,7 @@ def main() -> None:
     try:
         handleSend(chatSocket, user_name)
     except KeyboardInterrupt:
-        print("\nExiting...")
+        print("Exiting...")
     finally:
         chatSocket.close()
 
